@@ -1,6 +1,6 @@
 /*
 #-------------------------------------------------------------------------------
-# Copyright (c) 2014 Martin Marinov.
+# Copyright (c) 2014-2017 Martin Marinov, Henning Paul, Steve Markgraf.
 # All rights reserved. This program and the accompanying materials
 # are made available under the terms of the GNU Public License v3.0
 # which accompanies this distribution, and is available at
@@ -8,7 +8,7 @@
 # 
 # Contributors:
 #     Martin Marinov - initial API and implementation
-#     Henning Paul - port to librtlsdr
+#     Henning Paul - port to librtlsdr with code fragments from rtl_sdr.c
 #-------------------------------------------------------------------------------
 */
 #include <stdio.h>
@@ -37,6 +37,13 @@
 #define FRACT_DROPPED_TO_TOLERATE (0)
 
 namespace po = boost::program_options;
+
+typedef struct {
+	tsdrplugin_readasync_function cb;
+	void *ctx;
+	float *floatbuff;
+	size_t buff_size;
+} rtl_cb_ctx_t;
 
 uint32_t req_freq = 105e6;
 int req_gain = 0;
@@ -139,6 +146,31 @@ int verbose_device_search(const char *s)
 	fprintf(stderr, "No matching devices found.\n");
 	return -1;
 }
+
+static void rtlsdr_callback(unsigned char *buf, uint32_t len, rtl_cb_ctx_t *rtl_callback_ctx)
+{
+	size_t buff_size=(*rtl_callback_ctx).buff_size;
+	float *floatbuff=(*rtl_callback_ctx).floatbuff;
+	void *ctx=(*rtl_callback_ctx).ctx;
+	tsdrplugin_readasync_function cb=(*rtl_callback_ctx).cb;
+	//fprintf(stderr, "buff_size=%d, floatbuff=%x, ctx=%x, cb=%x\n",buff_size,floatbuff,ctx,cb);
+	if(is_running){
+		if (len==buff_size){
+			for(int i=0;i<len;i++){
+				floatbuff[i]=(float)buf[i]/128.0;
+			}
+			cb(floatbuff, len, ctx, 0);
+		
+		}
+		else{
+			cb(floatbuff, 0, ctx, len);
+			rtlsdr_cancel_async(dev);
+			is_running=0;
+		}
+			
+	}
+}
+
 
 EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_init(const char * params) {
 	// simulate argv and argc
@@ -322,9 +354,10 @@ EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_setgain(float gain) {
 
 EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_readasync(tsdrplugin_readasync_function cb, void *ctx) {
 
-	uint8_t *buff = NULL;
-	float *floatbuff = NULL;
-	int n_read, r;
+	int r;
+	rtl_cb_ctx_t rtl_callback_ctx;
+	float *floatbuff;
+	size_t buff_size;
 
 	is_running = 1;
 
@@ -360,38 +393,25 @@ EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_readasync(tsdrplugin_readasync_f
 		}
 	}
 
-	//verbose_reset_buffer(dev);
 	r = rtlsdr_reset_buffer(dev);
 	if (r < 0) {
 		RETURN_EXCEPTION("Can't reset buffer.", TSDR_CANNOT_OPEN_DEVICE);
 	}
 
-	//size_t buff_size = HOW_OFTEN_TO_CALL_CALLBACK_SEC * req_rate * 2;
-	size_t buff_size = (16 * 16384);
-	buff = (uint8_t *)malloc(buff_size * sizeof(uint8_t));
+	buff_size = (16 * 16384);
 	floatbuff = (float *)malloc(buff_size * sizeof(float));
-	while(is_running){
-		r = rtlsdr_read_sync(dev, buff, buff_size, &n_read);
-		if (r < 0) {
-			RETURN_EXCEPTION("rtlsdr_read_sync failed.", TSDR_CANNOT_OPEN_DEVICE);
-		}
-		if (n_read==buff_size){
-			for(int i=0;i<n_read;i++){
-				floatbuff[i]=(float)buff[i]/128.0;
-			}
-			cb(floatbuff, n_read, ctx, 0);
+	
+	//fprintf(stderr, "buff_size=%d, floatbuff=%x, ctx=%x, cb=%x\n",buff_size,floatbuff,ctx,cb);
+
+	rtl_callback_ctx.buff_size = buff_size;
+	rtl_callback_ctx.floatbuff = floatbuff;
+	rtl_callback_ctx.ctx=ctx;
+	rtl_callback_ctx.cb=cb;
+	
+	r = rtlsdr_read_async(dev, (rtlsdr_read_async_cb_t)rtlsdr_callback, &rtl_callback_ctx, 0, buff_size);
 		
-		}
-		else{
-			RETURN_EXCEPTION("short read.", TSDR_CANNOT_OPEN_DEVICE);
-			cb(floatbuff, 0, ctx, n_read);
-			is_running=0;
-		}
-			
-	}
-		
-	if (buff!=NULL) free(buff);
 	if (floatbuff!=NULL) free(floatbuff);
+
 	RETURN_OK();
 
 	return 0; // to avoid getting warning from stupid Eclpse

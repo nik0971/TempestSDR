@@ -7,6 +7,7 @@
  * 
  * Contributors:
  *     Martin Marinov - initial API and implementation
+ *     Henning Paul - adaptation to librtlsdr
  ******************************************************************************/
 package martin.tempest.sources;
 
