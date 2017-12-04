@@ -172,7 +172,16 @@ EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_init(const char * params) {
 	}
 
 	result = hackrf_set_vga_gain(device, vga_gain);
-	result |= hackrf_set_lna_gain(device, lna_gain);
+	if( result != HACKRF_SUCCESS ) {
+		free(argv);
+		RETURN_EXCEPTION("hackrf_set_vga_gain() failed", TSDR_CANNOT_OPEN_DEVICE);
+	}
+
+	result = hackrf_set_lna_gain(device, lna_gain);
+	if( result != HACKRF_SUCCESS ) {
+		free(argv);
+		RETURN_EXCEPTION("hackrf_set_lna_gain() failed", TSDR_CANNOT_OPEN_DEVICE);
+	}
 
 	result = hackrf_set_freq(device, req_freq);
 	if( result != HACKRF_SUCCESS ) {
@@ -228,6 +237,18 @@ EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_stop(void) {
 }
 
 EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_setgain(float gain) {
+
+	// max gain is 40 dB, in steps of 8 dB
+	float gain_factor = 5.0 * gain + 0.5;
+
+	int req_lna_gain=int(gain_factor)*8;	
+
+	//fprintf(stderr, "requested gain %f, set gain %d\n",gain,req_lna_gain);
+
+	int result = hackrf_set_lna_gain(device, req_lna_gain);
+	if( result != HACKRF_SUCCESS ) {
+		RETURN_EXCEPTION("hackrf_set_lna_gain() failed", TSDR_CANNOT_OPEN_DEVICE);
+	}
 
 	return 0; // to avoid getting warning from stupid Eclpse
 }

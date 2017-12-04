@@ -46,43 +46,27 @@ typedef struct {
 } rtl_cb_ctx_t;
 
 uint32_t req_freq = 105e6;
-int req_gain = 0;
-uint32_t req_rate = 2800000;
+uint32_t req_rate = 2000000;
 volatile int is_running = 0;
 rtlsdr_dev_t *dev = NULL;
+int* gains;
+int gain_count;
 
 EXTERNC TSDRPLUGIN_API void __stdcall tsdrplugin_getName(char * name) {
 	strcpy(name, "TSDR RTL-SDR Compatible Plugin");
 }
 
-int tortlsdrgain(float gain) {
-	return (int)(gain*10);
-}
-
 int nearest_gain(rtlsdr_dev_t *dev, int target_gain)
 {
-	int i, r, err1, err2, count, nearest;
-	int* gains;
-	r = rtlsdr_set_tuner_gain_mode(dev, 1);
-	if (r < 0) {
-		fprintf(stderr, "WARNING: Failed to enable manual gain.\n");
-		return r;
-	}
-	count = rtlsdr_get_tuner_gains(dev, NULL);
-	if (count <= 0) {
-		return 0;
-	}
-	gains = (int *)malloc(sizeof(int) * count);
-	count = rtlsdr_get_tuner_gains(dev, gains);
+	int i, err1, err2, nearest;
 	nearest = gains[0];
-	for (i=0; i<count; i++) {
+	for (i=0; i<gain_count; i++) {
 		err1 = abs(target_gain - nearest);
 		err2 = abs(target_gain - gains[i]);
 		if (err2 < err1) {
 			nearest = gains[i];
 		}
 	}
-	free(gains);
 	return nearest;
 }
 
@@ -226,6 +210,20 @@ EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_init(const char * params) {
 	if (r < 0) {
 		RETURN_EXCEPTION("Can't open device.", TSDR_CANNOT_OPEN_DEVICE);
 	}
+
+	r = rtlsdr_set_tuner_gain_mode(dev, 1);
+	if (r < 0) {
+		fprintf(stderr, "WARNING: Failed to enable manual gain.\n");
+		return r;
+	}
+	gain_count = rtlsdr_get_tuner_gains(dev, NULL);
+	if (gain_count <= 0) {
+		return 0;
+	}
+	gains = (int *)malloc(sizeof(int) * gain_count);
+	gain_count = rtlsdr_get_tuner_gains(dev, gains);
+
+
 	/* Set the sample rate */
 	//verbose_set_sample_rate(dev, req_rate);
 	r = rtlsdr_set_sample_rate(dev, req_rate);
@@ -247,26 +245,10 @@ EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_init(const char * params) {
 		RETURN_EXCEPTION("Can't set center frequency.", TSDR_CANNOT_OPEN_DEVICE);
 	}
 
-	if (0 == req_gain) {
-  		/* Enable automatic gain */
-		//verbose_auto_gain(dev);
-		r = rtlsdr_set_tuner_gain_mode(dev, 0);
-		if (r < 0) {
-			RETURN_EXCEPTION("Can't set auto gain mode.", TSDR_CANNOT_OPEN_DEVICE);
-		}
-	} else {
-		/* Enable manual gain */
-		int gain_val = nearest_gain(dev, tortlsdrgain(req_gain));
-		//verbose_gain_set(dev, gain_val);
-		r = rtlsdr_set_tuner_gain_mode(dev, 1);
-		if (r < 0) {
-			RETURN_EXCEPTION("Can't set manual gain mode.", TSDR_CANNOT_OPEN_DEVICE);
-		}
-		
-		r = rtlsdr_set_tuner_gain(dev, gain_val);
-		if (r < 0) {
-			RETURN_EXCEPTION("Can't set gain.", TSDR_CANNOT_OPEN_DEVICE);
-		}
+	/* Enable automatic gain */
+	r = rtlsdr_set_tuner_gain_mode(dev, 0);
+	if (r < 0) {
+		RETURN_EXCEPTION("Can't set auto gain mode.", TSDR_CANNOT_OPEN_DEVICE);
 	}
 		
 
@@ -335,9 +317,12 @@ EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_stop(void) {
 }
 
 EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_setgain(float gain) {
-	req_gain = gain;
-	int gain_val = nearest_gain(dev, tortlsdrgain(req_gain));
+
+	float denormalized_gain = gain*(gains[gain_count-1]-gains[0])+gains[0];
+	int gain_val = nearest_gain(dev, int(denormalized_gain));
+
 	//verbose_gain_set(dev, gain_val);
+	fprintf(stderr, "requested gain %f, set gain %d\n",gain,gain_val);
 	int r = rtlsdr_set_tuner_gain_mode(dev, 1);
 	if (r < 0) {
 		RETURN_EXCEPTION("Can't set manual gain mode.", TSDR_CANNOT_OPEN_DEVICE);
@@ -371,26 +356,10 @@ EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_readasync(tsdrplugin_readasync_f
 		RETURN_EXCEPTION("Can't set center frequency.", TSDR_CANNOT_OPEN_DEVICE);
 	}
 
-	if (0 == req_gain) {
-                  /* Enable automatic gain */
-		//verbose_auto_gain(dev);
-		r = rtlsdr_set_tuner_gain_mode(dev, 0);
-		if (r < 0) {
-			RETURN_EXCEPTION("Can't set auto gain mode.", TSDR_CANNOT_OPEN_DEVICE);
-		}
-	} else {
-		/* Enable manual gain */
-		int gain_val = nearest_gain(dev, tortlsdrgain(req_gain));
-		//verbose_gain_set(dev, gain_val);
-		r = rtlsdr_set_tuner_gain_mode(dev, 1);
-		if (r < 0) {
-			RETURN_EXCEPTION("Can't set manual gain mode.", TSDR_CANNOT_OPEN_DEVICE);
-		}
-			
-		r = rtlsdr_set_tuner_gain(dev, gain_val);
-		if (r < 0) {
-			RETURN_EXCEPTION("Can't set gain.", TSDR_CANNOT_OPEN_DEVICE);
-		}
+        /* Enable automatic gain */
+	r = rtlsdr_set_tuner_gain_mode(dev, 0);
+	if (r < 0) {
+		RETURN_EXCEPTION("Can't set auto gain mode.", TSDR_CANNOT_OPEN_DEVICE);
 	}
 
 	r = rtlsdr_reset_buffer(dev);
@@ -419,6 +388,7 @@ EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_readasync(tsdrplugin_readasync_f
 
 EXTERNC TSDRPLUGIN_API void __stdcall tsdrplugin_cleanup(void) {
 
+	free(gains);
 	rtlsdr_close(dev);
 
 	is_running = 0;
