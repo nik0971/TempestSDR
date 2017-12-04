@@ -43,10 +43,15 @@ typedef struct {
 	void *ctx;
 	float *floatbuff;
 	size_t buff_size;
-} rtl_cb_ctx_t;
+} cb_ctx_t;
 
 uint32_t req_freq = 105e6;
+<<<<<<< HEAD
 uint32_t req_rate = 2000000;
+=======
+float req_gain = 0;
+uint32_t req_rate = 2800000;
+>>>>>>> c9dbe64e577d4b6d81d16966aa0c7e7c259c202a
 volatile int is_running = 0;
 rtlsdr_dev_t *dev = NULL;
 int* gains;
@@ -131,17 +136,17 @@ int verbose_device_search(const char *s)
 	return -1;
 }
 
-static void rtlsdr_callback(unsigned char *buf, uint32_t len, rtl_cb_ctx_t *rtl_callback_ctx)
+static void rtlsdr_callback(unsigned char *buf, uint32_t len, cb_ctx_t *rtl_callback_ctx)
 {
-	size_t buff_size=(*rtl_callback_ctx).buff_size;
-	float *floatbuff=(*rtl_callback_ctx).floatbuff;
-	void *ctx=(*rtl_callback_ctx).ctx;
-	tsdrplugin_readasync_function cb=(*rtl_callback_ctx).cb;
+	size_t buff_size=rtl_callback_ctx->buff_size;
+	float *floatbuff=rtl_callback_ctx->floatbuff;
+	void *ctx=rtl_callback_ctx->ctx;
+	tsdrplugin_readasync_function cb=rtl_callback_ctx->cb;
 	//fprintf(stderr, "buff_size=%d, floatbuff=%x, ctx=%x, cb=%x\n",buff_size,floatbuff,ctx,cb);
 	if(is_running){
 		if (len==buff_size){
 			for(int i=0;i<len;i++){
-				floatbuff[i]=(float)buf[i]/128.0;
+				floatbuff[i]=(buf[i]/128.0)-1.0;
 			}
 			cb(floatbuff, len, ctx, 0);
 		
@@ -203,11 +208,13 @@ EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_init(const char * params) {
 	}
 	
 	if (dev_index < 0) {
+		free(argv);
 		RETURN_EXCEPTION("Can't find RTL-SDR.", TSDR_CANNOT_OPEN_DEVICE);
 	}
 
 	r = rtlsdr_open(&dev, (uint32_t)dev_index);
 	if (r < 0) {
+		free(argv);
 		RETURN_EXCEPTION("Can't open device.", TSDR_CANNOT_OPEN_DEVICE);
 	}
 
@@ -228,6 +235,7 @@ EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_init(const char * params) {
 	//verbose_set_sample_rate(dev, req_rate);
 	r = rtlsdr_set_sample_rate(dev, req_rate);
 	if (r < 0) {
+		free(argv);
 		RETURN_EXCEPTION("Can't set sample rate.", TSDR_CANNOT_OPEN_DEVICE);
 	}
 
@@ -235,6 +243,7 @@ EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_init(const char * params) {
 	//verbose_set_bandwidth(dev, bw);
 	r = rtlsdr_set_tuner_bandwidth(dev, bw);
 	if (r < 0) {
+		free(argv);
 		RETURN_EXCEPTION("Can't set bandwidth.", TSDR_CANNOT_OPEN_DEVICE);
 	}
 
@@ -242,13 +251,41 @@ EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_init(const char * params) {
 	//verbose_set_frequency(dev, req_freq);
 	r = rtlsdr_set_center_freq(dev, req_freq);
 	if (r < 0) {
+		free(argv);
 		RETURN_EXCEPTION("Can't set center frequency.", TSDR_CANNOT_OPEN_DEVICE);
 	}
 
+<<<<<<< HEAD
 	/* Enable automatic gain */
 	r = rtlsdr_set_tuner_gain_mode(dev, 0);
 	if (r < 0) {
 		RETURN_EXCEPTION("Can't set auto gain mode.", TSDR_CANNOT_OPEN_DEVICE);
+=======
+	if (0 == req_gain) {
+  		/* Enable automatic gain */
+		//verbose_auto_gain(dev);
+		r = rtlsdr_set_tuner_gain_mode(dev, 0);
+		if (r < 0) {
+			free(argv);
+			RETURN_EXCEPTION("Can't set auto gain mode.", TSDR_CANNOT_OPEN_DEVICE);
+		}
+	} else {
+		/* Enable manual gain */
+		int gain_val = nearest_gain(dev, (int)(10.0*req_gain));
+		//verbose_gain_set(dev, gain_val);
+		r = rtlsdr_set_tuner_gain_mode(dev, 1);
+		if (r < 0) {
+			free(argv);
+			RETURN_EXCEPTION("Can't set manual gain mode.", TSDR_CANNOT_OPEN_DEVICE);
+		}
+		
+		r = rtlsdr_set_tuner_gain(dev, gain_val);
+		if (r < 0) {
+			free(argv);
+			RETURN_EXCEPTION("Can't set gain.", TSDR_CANNOT_OPEN_DEVICE);
+		}
+		fprintf(stderr, "Gain set to %2.1fdB\n",0.1*gain_val);
+>>>>>>> c9dbe64e577d4b6d81d16966aa0c7e7c259c202a
 	}
 		
 
@@ -310,6 +347,7 @@ EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_setbasefreq(uint32_t freq) {
 }
 
 EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_stop(void) {
+	rtlsdr_cancel_async(dev);
 	is_running = 0;
 	RETURN_OK();
 
@@ -317,10 +355,15 @@ EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_stop(void) {
 }
 
 EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_setgain(float gain) {
+<<<<<<< HEAD
 
 	float denormalized_gain = gain*(gains[gain_count-1]-gains[0])+gains[0];
 	int gain_val = nearest_gain(dev, int(denormalized_gain));
 
+=======
+	req_gain = gain;
+	int gain_val = nearest_gain(dev, (int)(10.0*req_gain));
+>>>>>>> c9dbe64e577d4b6d81d16966aa0c7e7c259c202a
 	//verbose_gain_set(dev, gain_val);
 	fprintf(stderr, "requested gain %f, set gain %d\n",gain,gain_val);
 	int r = rtlsdr_set_tuner_gain_mode(dev, 1);
@@ -332,6 +375,7 @@ EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_setgain(float gain) {
 	if (r < 0) {
 		RETURN_EXCEPTION("Can't set gain.", TSDR_CANNOT_OPEN_DEVICE);
 	}
+	fprintf(stderr, "Gain set to %2.1fdB\n",0.1*gain_val);
 	RETURN_OK();
 
 	return 0; // to avoid getting warning from stupid Eclpse
@@ -340,7 +384,7 @@ EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_setgain(float gain) {
 EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_readasync(tsdrplugin_readasync_function cb, void *ctx) {
 
 	int r;
-	rtl_cb_ctx_t rtl_callback_ctx;
+	cb_ctx_t rtl_callback_ctx;
 	float *floatbuff;
 	size_t buff_size;
 
@@ -356,10 +400,34 @@ EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_readasync(tsdrplugin_readasync_f
 		RETURN_EXCEPTION("Can't set center frequency.", TSDR_CANNOT_OPEN_DEVICE);
 	}
 
+<<<<<<< HEAD
         /* Enable automatic gain */
 	r = rtlsdr_set_tuner_gain_mode(dev, 0);
 	if (r < 0) {
 		RETURN_EXCEPTION("Can't set auto gain mode.", TSDR_CANNOT_OPEN_DEVICE);
+=======
+	if (0 == req_gain) {
+                  /* Enable automatic gain */
+		//verbose_auto_gain(dev);
+		r = rtlsdr_set_tuner_gain_mode(dev, 0);
+		if (r < 0) {
+			RETURN_EXCEPTION("Can't set auto gain mode.", TSDR_CANNOT_OPEN_DEVICE);
+		}
+	} else {
+		/* Enable manual gain */
+		int gain_val = nearest_gain(dev, (int)(10.0*req_gain));
+		//verbose_gain_set(dev, gain_val);
+		r = rtlsdr_set_tuner_gain_mode(dev, 1);
+		if (r < 0) {
+			RETURN_EXCEPTION("Can't set manual gain mode.", TSDR_CANNOT_OPEN_DEVICE);
+		}
+			
+		r = rtlsdr_set_tuner_gain(dev, gain_val);
+		if (r < 0) {
+			RETURN_EXCEPTION("Can't set gain.", TSDR_CANNOT_OPEN_DEVICE);
+		}
+		fprintf(stderr, "Gain set to %2.1fdB\n",0.1*gain_val);
+>>>>>>> c9dbe64e577d4b6d81d16966aa0c7e7c259c202a
 	}
 
 	r = rtlsdr_reset_buffer(dev);
