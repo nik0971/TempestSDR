@@ -57,6 +57,7 @@ static transceiver_mode_t transceiver_mode = TRANSCEIVER_MODE_RX;
 static hackrf_device* device = NULL;
 
 unsigned int lna_gain=8, vga_gain=20;
+bool amp_on = 0;
 
 uint32_t req_freq = 105e6;
 float req_gain = 1;
@@ -125,6 +126,7 @@ EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_init(const char * params) {
 	desc.add_options()
 	("sernum", po::value<std::string>(&serial_number)->default_value(""), "HackRF device address args")
 	("rate", po::value<uint32_t>(&req_rate)->default_value(req_rate), "rate of incoming samples")
+	("amp", po::value<bool>(&amp_on), "enable input amplifier")
 	("bw", po::value<uint32_t>(&bw), "daughterboard IF filter bandwidth in Hz");
 
 	po::variables_map vm;
@@ -169,6 +171,12 @@ EXTERNC TSDRPLUGIN_API int __stdcall tsdrplugin_init(const char * params) {
 	if( result != HACKRF_SUCCESS ) {
 		free(argv);
 		RETURN_EXCEPTION("hackrf_set_hw_sync_mode() failed", TSDR_CANNOT_OPEN_DEVICE);
+	}
+
+	result = hackrf_set_amp_enable(device, amp_on?1:0);
+	if( result != HACKRF_SUCCESS ) {
+		free(argv);
+		RETURN_EXCEPTION("hackrf_set_amp_enable() failed", TSDR_CANNOT_OPEN_DEVICE);
 	}
 
 	result = hackrf_set_vga_gain(device, vga_gain);
