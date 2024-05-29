@@ -74,8 +74,8 @@ else
 		ifneq ($(filter %86,$(UNAME_M)),)
 			ARCHNAME = X86
 		endif
-		ifneq ($(filter arm%,$(UNAME_M)),)
-			ARCHNAME = ARM
+		ifneq ($(filter aarch%,$(UNAME_M)),)
+			ARCHNAME = arm64
 		endif
 
 	endif
