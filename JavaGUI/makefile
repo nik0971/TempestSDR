@@ -53,8 +53,8 @@ else
 		ifneq ($(filter %86,$(UNAME_M)),)
 			ARCHNAME = X86
 		endif
-		ifneq ($(filter arm%,$(UNAME_M)),)
-			ARCHNAME = ARM
+		ifneq ($(UNAME_M),aarch64)
+			ARCHNAME = arm64
 		endif
 
 	endif
